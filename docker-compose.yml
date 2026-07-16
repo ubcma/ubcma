@@ -1,0 +1,132 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_DB: ubcma_dev
+      POSTGRES_USER: ubcma
+      POSTGRES_PASSWORD: changeme
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ubcma -d ubcma_dev"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  mp-backend:
+    build:
+      context: ./mp-backend
+      target: dev
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./mp-backend:/app
+      - /app/node_modules
+      - /app/dist
+    env_file: ./mp-backend/.env
+    environment:
+      REDIS_URL: redis://redis:6379
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/ > /dev/null 2>&1 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  mp-frontend:
+    build:
+      context: ./mp-frontend
+      target: dev
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./mp-frontend:/app
+      - /app/node_modules
+      - /app/.next
+    env_file: ./mp-frontend/.env
+    environment:
+      # Required for hot-reload through Docker Desktop's VM layer on macOS
+      WATCHPACK_POLLING: "true"
+      CHOKIDAR_USEPOLLING: "true"
+      # Server-side SSR calls go through the Docker network, not localhost
+      BACKEND_URL: http://mp-backend:8080
+    depends_on:
+      - mp-backend
+
+  ma-site:
+    build:
+      context: ./ma-site
+      target: dev
+    restart: unless-stopped
+    ports:
+      - "3001:3000"
+    volumes:
+      - ./ma-site:/app
+      - /app/node_modules
+      - /app/.next
+    environment:
+      WATCHPACK_POLLING: "true"
+      CHOKIDAR_USEPOLLING: "true"
+
+  ma-network:
+    build:
+      context: ./ma-network
+      target: dev
+    restart: unless-stopped
+    ports:
+      - "3002:3000"
+    volumes:
+      - ./ma-network:/app
+      - /app/node_modules
+      - /app/dist
+    environment:
+      CHOKIDAR_USEPOLLING: "true"
+    # --host binds Vite to 0.0.0.0 so it's reachable outside the container
+    command: pnpm dev --host
+
+  banner:
+    image: alpine
+    restart: "no"
+    depends_on:
+      mp-backend:
+        condition: service_healthy
+    command: >
+      sh -c '
+      printf "\n" &&
+      printf "┌─────────────────────────────────────────────┐\n" &&
+      printf "│          UBCMA Dev Environment  ✓           │\n" &&
+      printf "├─────────────────────────────────────────────┤\n" &&
+      printf "│  mp-frontend  →  http://localhost:3000       │\n" &&
+      printf "│  mp-backend   →  http://localhost:8080       │\n" &&
+      printf "│  ma-site      →  http://localhost:3001       │\n" &&
+      printf "│  ma-network   →  http://localhost:3002       │\n" &&
+      printf "└─────────────────────────────────────────────┘\n" &&
+      printf "\n"
+      '
+
+volumes:
+  postgres_data:
+  redis_data:

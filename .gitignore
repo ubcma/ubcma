@@ -1,0 +1,8 @@
+.env
+
+# Sub-repos are separate GitHub repos — do not commit them here
+mp-backend/
+mp-frontend/
+ma-site/
+ma-network/
+photobooth/
