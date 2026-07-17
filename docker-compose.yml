@@ -97,7 +97,7 @@ services:
       target: dev
     restart: unless-stopped
     ports:
-      - "3002:3000"
+      - "3002:3001"
     volumes:
       - ./ma-network:/app
       - /app/node_modules
